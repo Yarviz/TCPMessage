@@ -1,4 +1,7 @@
 TCPMessageClient/bin/
 TCPMessageClient/obj/
+TCPMessageClient/TCPMessageServer.depend
 TCPMessageServer/bin/
 TCPMessageServer/obj/
+TCPMessageServer/TCPMessageServer.depend
+
