@@ -1,2 +1,4 @@
-bin/
-obj/
+TCPMessageClient/bin/
+TCPMessageClient/obj/
+TCPMessageServer/bin/
+TCPMessageServer/obj/

@@ -1,0 +1,10 @@
+# depslib dependency file v1.0
+1615367706 source:/home/jussi/Documents/c++/TCPMessage/TCPMessageClient/src/client.cpp
+	"client.h"
+
+1615369291 /home/jussi/Documents/c++/TCPMessage/TCPMessageClient/include/client.h
+	<iostream>
+	<sys/socket.h>
+	<netinet/in.h>
+	<string.h>
+
