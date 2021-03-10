@@ -1,6 +1,8 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#define PORT    8080
+
 #include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>
