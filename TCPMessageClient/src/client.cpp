@@ -6,7 +6,7 @@ Client::Client(int _port)
 
     memset(buffer, 0, sizeof(buffer));
 
-    if ((my_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0)
+    if ((my_socket = socket(AF_INET , SOCK_STREAM , IPPROTO_TCP)) == 0)
     {
         std::cout << "Can't create socket!" << std::endl;
         exit(EXIT_FAILURE);
@@ -48,5 +48,7 @@ void Client::start()
         }
         else if (ch == 'w') break;
     }
+
+    close(my_socket);
 
 }

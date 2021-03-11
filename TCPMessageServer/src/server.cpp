@@ -2,33 +2,12 @@
 
 Server::Server(int _port)
 {
-    port = _port;
-    memset(client_socket, 0, sizeof(client_socket));
+    port_number = _port;
     memset(buffer, 0, sizeof(buffer));
 
-    if ((master_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0)
-    {
-        std::cout << "Can't create socket!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
+    if ((socket_raw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP)) < 0) raiseError(ERR_CREATION);
 
-    int opt = 1;
-
-    if (setsockopt(master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt)) < 0)
-    {
-        std::cout << "Can't change socket options!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(port);
-
-    addrlen = sizeof(address);
-
-    max_sd = 0;
-    sd = 0;
-    active = 0;
+    std::cout << "Socket created succesfully!" << std::endl;
 }
 
 Server::~Server()
@@ -36,98 +15,127 @@ Server::~Server()
     //dtor
 }
 
-void Server::addNewClient()
+void Server::raiseError(int type)
 {
-    if ((new_socket = accept(master_socket, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0)
+    switch(type)
     {
-        std::cout << "Error when adding client!" << std::endl;
-        exit(EXIT_FAILURE);
+        case ERR_CREATION: std::cout << "Error when creating socket."; break;
+        case ERR_RECEIVE: std::cout << "Error when receiving packets."; break;
     }
 
-    std::cout << "New connection: socket fd = " << new_socket << " ip = " << inet_ntoa(address.sin_addr) << " port = " << ntohs(address.sin_port) << std::endl;
-
-    const char * message = "Welcome to Server";
-
-    send(new_socket, message, strlen(message), 0) != strlen(message);
-
-    for (int &socket : client_socket)
-    {
-        if(socket == 0)
-        {
-            socket = new_socket;
-            break;
-        }
-    }
+    std::cout << std::endl;
+    exit(EXIT_FAILURE);
 }
 
-void Server::readClient(int cl)
+uint16_t Server::calculateChecksum(const uint8_t *buffer, uint16_t checksum, int data_size)
 {
-    int read_size;
+    uint64_t sum = 0;
+    uint16_t ret = 0;
+    int bit = 0;
 
-    if ((read_size = read(client_socket[cl], buffer, 1024)) == 0)
+    sum += ntohl(ip_header->saddr);
+    sum += ntohl(ip_header->daddr);
+    sum += ip_header->protocol;
+    sum += ntohs(ip_header->tot_len) - (ip_header->ihl * 4);
+
+    while(data_size > 1)
     {
-        getpeername(client_socket[cl] , (struct sockaddr*)&address, (socklen_t*)&addrlen);
-        std::cout << "Host disconnect: ip = " << inet_ntoa(address.sin_addr) << " port = " << ntohs(address.sin_port) << std::endl;
-
-        close(client_socket[cl]);
-        client_socket[cl] = 0;
+        sum += ntohs(*(uint16_t *)&buffer[bit]);
+        bit += 2;
+        data_size -= 2;
     }
 
-    std::cout << buffer << std::endl;
+    if (data_size == 1)
+    {
+        sum += *(uint8_t *)&buffer[bit] << 8;
+    }
+
+    sum -= checksum;
+
+    while(sum > 0)
+    {
+        ret += sum & 0xffff;
+        sum >>= 16;
+    }
+
+    return ~ret;
+}
+
+uint8_t Server::parseIPheader(const uint8_t *buffer, int data_size)
+{
+    ip_header = (struct iphdr*)buffer;
+
+    source.sin_addr.s_addr = ip_header->saddr;
+    dest.sin_addr.s_addr = ip_header->daddr;
+
+    /*std::cout << "Address: ";
+    std::cout << ((ip_header->saddr & 0x000000ff) >> 0) << ".";
+    std::cout << ((ip_header->saddr & 0x0000ff00) >> 8) << ".";
+    std::cout << ((ip_header->saddr & 0x00ff0000) >> 16) << ".";
+    std::cout << ((ip_header->saddr & 0xff0000ff) >> 24) << std::endl;
+
+    std::cout << ntohl(ip_header->saddr) << std::endl;*/
+
+    std::cout << "Source IP: " << inet_ntoa(source.sin_addr) << std::endl;
+    std::cout << "Destination IP: " << inet_ntoa(dest.sin_addr) << std::endl;
+    std::cout << "IP header size: " << (int)ip_header->ihl * 4 << std::endl;
+
+    return ip_header->protocol;
+}
+
+void Server::parseTCP(const uint8_t *buffer, int data_size)
+{
+    tcp_header = (struct tcphdr*)(buffer + ip_header->ihl * 4);
+
+    std::cout << "Packet protocol: TCP" << std::endl;
+    //std::cout << "Packet checksum: " << tcp_header-> << std::endl;
+    std::cout << "Packet checksum: " << tcp_header->check << std::endl;
+    std::cout << "Calculated checksum: " << calculateChecksum(buffer, tcp_header->check, data_size) << std::endl;
+}
+
+void Server::parseUDP(const uint8_t *buffer, int data_size)
+{
+    std::cout << "Packet protocol: UDP" << std::endl;
+}
+
+void Server::parsePacket(const uint8_t *buffer, int data_size)
+{
+    std::cout << std::endl;
+
+    uint8_t protocol = parseIPheader(buffer, data_size);
+
+    switch(protocol)
+    {
+        case PROT_TCP:
+            parseTCP(buffer, data_size);
+            break;
+
+        case PROT_UDP:
+            parseUDP(buffer, data_size);
+            break;
+
+        default:
+            std::cout << "Packet protocol: UNDEFINED" << std::endl;
+    }
+
+    std::cout << std::endl;
 }
 
 void Server::start()
 {
-    if (bind(master_socket, (struct sockaddr *)&address, sizeof(address)) < 0)
+    int data_size;
+    unsigned int addr_size = sizeof(address_in);
+    int packets = 0;
+
+    while(packets < 10)
     {
-        std::cout << "Can't bind socket!" << std::endl;
-        exit(EXIT_FAILURE);
+        data_size = recvfrom(socket_raw, buffer, BUFFER_SIZE, 0, &address_in, (socklen_t *)&addr_size);
+
+        if (data_size < 0) raiseError(ERR_RECEIVE);
+
+        parsePacket(buffer, data_size);
+        ++packets;
     }
 
-    if (listen(master_socket, 3) < 0)
-    {
-        std::cout << "Error when listening!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    std::cout << "Server start: Listening on port " << port << std::endl;
-
-
-    timeval time_out;
-
-    while(1)
-    {
-        FD_ZERO(&fds_read);
-
-        FD_SET(master_socket, &fds_read);
-        max_sd = master_socket;
-
-        for (int &socket : client_socket)
-        {
-            sd = socket;
-
-            if (sd > 0) FD_SET( sd , &fds_read);
-            if(sd > max_sd) max_sd = sd;
-        }
-
-        time_out.tv_sec = 1;
-        time_out.tv_usec = 0;
-
-        active = select(max_sd + 1, &fds_read,  NULL, NULL, &time_out);
-
-        if (active < 0)
-        {
-            std::cout << "Socket error!" << std::endl;
-            exit(EXIT_FAILURE);
-        }
-
-        if (FD_ISSET(master_socket, &fds_read)) addNewClient();
-
-        for (int i = 0; i < MAX_CLIENTS; i++)
-        {
-            if (FD_ISSET(client_socket[i] , &fds_read)) readClient(i);
-        }
-
-        //std::cout << "Waiting.." << std::endl;
-    }
+    close(socket_raw);
 }
