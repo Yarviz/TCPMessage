@@ -3,8 +3,10 @@
 Server::Server(int _port)
 {
     port_number = _port;
+
     memset(buffer, 0, sizeof(buffer));
     memset(clients, 0, sizeof(clients));
+    memset(&packet, 0, sizeof(packet));
 
     if ((socket_raw = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP))) < 0) raiseError(ERR_CREATION);
     if ((socket_master = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) raiseError(ERR_CREATION);
@@ -27,23 +29,12 @@ Server::Server(int _port)
     bzero(&ifr, sizeof(ifr));
 
     strncpy((char *)ifr.ifr_name, "wlp2s0", IFNAMSIZ);
-    //strncpy((char *)ifr.ifr_name, "lo", IFNAMSIZ);
 
-    if((ioctl(socket_raw, SIOCGIFINDEX, &ifr)) == -1)
-    {
-        perror("Unable to find interface index");
-        exit(-1);
-    }
+    if((ioctl(socket_raw, SIOCGIFINDEX, &ifr)) == -1) raiseError(ERR_INTERFACE);
 
     raw_addr_ll.sll_family = AF_PACKET;
     raw_addr_ll.sll_ifindex = ifr.ifr_ifindex;
     raw_addr_ll.sll_protocol = htons(ETH_P_IP);
-
-    //raw_addr.sa_family = AF_PACKET;
-    //raw_addr.sin_addr.s_addr = INADDR_ANY;
-    //raw_addr.sa_protocol = htons(ETH_P_IP);
-
-    std::cout << "Socket created succesfully!" << std::endl;
 }
 
 Server::~Server()
@@ -55,16 +46,15 @@ void Server::raiseError(int type)
 {
     switch(type)
     {
-        case ERR_CREATION: std::cout << "Error when creating socket"; break;
-        case ERR_OPTIONS: std::cout << "Error when changing socket options"; break;
-        case ERR_RECEIVE: std::cout << "Error when receiving packets"; break;
-        case ERR_BIND: std::cout << "Error when binding socket"; break;
-        case ERR_LISTEN: std::cout << "Error when listening socket"; break;
-        case ERR_SOCKET: std::cout << "Error when polling sockets"; break;
+        case ERR_CREATION: perror("Error when creating socket"); break;
+        case ERR_OPTIONS: perror("Error when changing socket options"); break;
+        case ERR_RECEIVE: perror("Error when receiving packets"); break;
+        case ERR_BIND: perror("Error when binding socket"); break;
+        case ERR_LISTEN: perror("Error when listening socket"); break;
+        case ERR_SOCKET: perror("Error when polling sockets"); break;
+        case ERR_INTERFACE: perror("Error when setting interface"); break;
+        case ERR_CLIENT: perror("Error when adding client"); break;
     }
-
-    std::cout << std::flush;
-    perror(":");
 
     exit(EXIT_FAILURE);
 }
@@ -111,44 +101,40 @@ bool Server::filterPacket()
     return false;
 }
 
-void Server::parseEthernet(const uint8_t *buffer, int data_size)
+void Server::parseEthernet()
 {
-    std::cout << "Destination MAC address: " << ether_ntoa((const struct ether_addr*)eth_header) << std::endl;
-    printf("Source MAC address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n",
+    //std::cout << "Destination MAC address: " << ether_ntoa((const struct ether_addr*)eth_header) << std::endl;
+    sprintf(packet.mac_address, "%.2X-%.2X-%.2X-%.2X-%.2X-%.2X",
             eth_header->h_source[0], eth_header->h_source[1], eth_header->h_source[2],
             eth_header->h_source[3], eth_header->h_source[4], eth_header->h_source[5]);
     //std::cout << "Destination MAC address: " << ether_ntoa(&eth_header->h_dest) << std::endl;
 }
 
-void Server::parseIPheader(const uint8_t *buffer, int data_size)
+void Server::parseIPheader()
 {
-    source.sin_addr.s_addr = ip_header->saddr;
-    dest.sin_addr.s_addr = ip_header->daddr;
+    source_addr.sin_addr.s_addr = ip_header->saddr;
 
-    /*std::cout << "Address: ";
-    std::cout << ((ip_header->saddr & 0x000000ff) >> 0) << ".";
-    std::cout << ((ip_header->saddr & 0x0000ff00) >> 8) << ".";
-    std::cout << ((ip_header->saddr & 0x00ff0000) >> 16) << ".";
-    std::cout << ((ip_header->saddr & 0xff0000ff) >> 24) << std::endl;
+    strcpy(packet.ip_address, inet_ntoa(source_addr.sin_addr));
 
-    std::cout << ntohl(ip_header->saddr) << std::endl;*/
-
-    std::cout << "Source IP: " << inet_ntoa(source.sin_addr) << std::endl;
-    std::cout << "Destination IP: " << inet_ntoa(dest.sin_addr) << std::endl;
-    std::cout << "IP header size: " << (int)ip_header->ihl * 4 << std::endl;
+    //std::cout << "Source IP: " << inet_ntoa(source.sin_addr) << std::endl;
+    //std::cout << "Destination IP: " << inet_ntoa(dest.sin_addr) << std::endl;
+    //std::cout << "IP header size: " << (int)ip_header->ihl * 4 << std::endl;
 }
 
 bool Server::parseTCP(const uint8_t *buffer, int data_size)
 {
     tcp_header = (struct tcphdr*)(buffer + sizeof(struct ethhdr) + ip_header->ihl * 4);
 
-    //if (ntohl(tcp_header->th_dport) != port_number) return false;
+    if (ntohs(tcp_header->th_dport) != port_number) return false;
 
-    std::cout << std::endl;
-    std::cout << "Packet protocol: TCP" << std::endl;
-    std::cout << "Packet checksum: " << tcp_header->check << std::endl;
-    std::cout << "Destination port: " << tcp_header->th_dport << std::endl;
-    std::cout << "Calculated checksum: " << calculateChecksum(buffer, tcp_header->check, data_size) << std::endl;
+    packet.cheksum = ntohs(tcp_header->check);
+    packet.cheksum_calc = calculateChecksum(buffer, packet.cheksum, data_size);
+
+    //std::cout << std::endl;
+    //std::cout << "Packet protocol: TCP" << std::endl;
+    //std::cout << "Packet checksum: " << tcp_header->check << std::endl;
+    //std::cout << "Destination port: " << ntohs(tcp_header->th_dport) << std::endl;
+    //std::cout << "Calculated checksum: " << calculateChecksum(buffer, tcp_header->check, data_size) << std::endl;
 
     return true;
 }
@@ -169,33 +155,42 @@ void Server::parsePacket(const uint8_t *buffer, int data_size)
     {
         case PROT_TCP:
             if (!parseTCP(buffer, data_size)) return;
-            parseEthernet(buffer, data_size);
-            parseIPheader(buffer, data_size);
+            parseEthernet();
+            parseIPheader();
             break;
 
         case PROT_UDP:
             parseUDP(buffer, data_size);
             break;
 
-        default:
-            std::cout << "Packet protocol: UNDEFINED" << std::endl;
+        //default:
+        //    std::cout << "Packet protocol: UNDEFINED" << std::endl;
     }
+}
+
+void Server::printPacketInfo()
+{
+    std::cout << std::endl;
+    std::cout << "Packet protocol     : TCP" << std::endl;
+    std::cout << "Packet checksum     : " << packet.cheksum << std::endl;
+    std::cout << "Calculated checksum : " << packet.cheksum_calc << std::endl;
+    std::cout << "Packet IP           : " << packet.ip_address << std::endl;
+    std::cout << "Packet MAC          : " << packet.mac_address << std::endl;
+    std::cout << std::endl;
 }
 
 void Server::addNewClient()
 {
-    if ((new_socket = accept(socket_master, (struct sockaddr *)&master_addr, (socklen_t*)&master_addr_size)) < 0)
-    {
-        std::cout << "Error when adding client!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
+    if ((new_socket = accept(socket_master, (struct sockaddr *)&master_addr, (socklen_t*)&master_addr_size)) < 0) raiseError(ERR_CLIENT);
 
-    std::cout << "New connection: socket fd = " << new_socket << " ip = " << inet_ntoa(master_addr.sin_addr);
-    std::cout << " port = " << ntohs(master_addr.sin_port) << " address family = " << master_addr.sin_family << std::endl;
+    //if (source_addr.sin_addr.s_addr != master_addr.sin_addr.s_addr) return;
+
+    std::cout << "New connection: socket fd = " << new_socket << " ip = " << packet.ip_address;
+    std::cout << " mac = " << packet.mac_address << std::endl;
 
     const char * message = "Welcome to Server";
 
-    send(new_socket, message, strlen(message), 0) != strlen(message);
+    send(new_socket, message, strlen(message), 0);
 
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
@@ -213,15 +208,28 @@ void Server::readClient(int cl)
 
     if ((read_size = read(clients[cl].num, buffer, BUFFER_SIZE - 1)) == 0)
     {
-        getpeername(clients[cl].num , (struct sockaddr*)&master_addr, (socklen_t*)&master_addr_size);
+        getpeername(clients[cl].num ,(struct sockaddr*)&master_addr, (socklen_t*)&master_addr_size);
         std::cout << "Host disconnect: ip = " << inet_ntoa(master_addr.sin_addr) << " port = " << ntohs(master_addr.sin_port) << std::endl;
 
         close(clients[cl].num);
         clients[cl].num  = 0;
+        return;
     }
 
     buffer[read_size] = '\0';
     std::cout << buffer << std::endl;
+
+    int sock;
+
+    for (int i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(clients[i].num > 0)
+        {
+            sock = getpeername(clients[i].num ,(struct sockaddr*)&master_addr, (socklen_t*)&master_addr_size);
+            send(sock, buffer, read_size, 0);
+            break;
+        }
+    }
 }
 
 void Server::start()
@@ -240,11 +248,11 @@ void Server::start()
 
     std::cout << "Server start: Listening on port " << port_number << std::endl;
 
-    while(packets < 20)
+    while(packets < 100)
     {
         FD_ZERO(&fds_read);
         FD_SET(socket_raw, &fds_read);
-        //FD_SET(socket_master, &fds_read);
+        FD_SET(socket_master, &fds_read);
 
         max_sd = socket_master;
 
@@ -271,6 +279,7 @@ void Server::start()
             parsePacket(buffer, data_size);
             ++packets;
         }
+
         if (FD_ISSET(socket_master, &fds_read)) addNewClient();
 
         for (int i = 0; i < MAX_CLIENTS; i++)
