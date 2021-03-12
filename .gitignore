@@ -4,4 +4,7 @@ TCPMessageClient/TCPMessageClient.depend
 TCPMessageServer/bin/
 TCPMessageServer/obj/
 TCPMessageServer/TCPMessageServer.depend
+TCPMessageClientWindows/bin/
+TCPMessageClientWindows/obj/
+TCPMessageClientWindows/TCPMessageClientWindows.depend
 
