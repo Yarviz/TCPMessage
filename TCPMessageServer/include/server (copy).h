@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <net/ethernet.h>
+#include <linux/if_packet.h>
 #include <unistd.h>
 #include <string.h>
 

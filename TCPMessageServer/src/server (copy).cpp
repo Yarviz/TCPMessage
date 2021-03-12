@@ -108,7 +108,7 @@ void Server::start()
             sd = socket;
 
             if (sd > 0) FD_SET( sd , &fds_read);
-            if(sd > max_sd) max_sd = sd;
+            if (sd > max_sd) max_sd = sd;
         }
 
         time_out.tv_sec = 1;
