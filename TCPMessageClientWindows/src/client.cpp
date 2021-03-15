@@ -52,6 +52,6 @@ void Client::start()
         else if (ch == 'w') break;
     }
 
+    shutdown(my_socket, SD_SEND);
     closesocket(my_socket);
-
 }
