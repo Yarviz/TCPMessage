@@ -102,15 +102,6 @@ bool Client::handleInput()
             return true;
             break;
 
-        case 8:
-            if (message.size() > 1)
-            {
-                clearMessageLine();
-                message.pop_back();
-                std::cout << message;
-            }
-            break;
-
         case 10:
             if (message.size() == 1) return true;
             if (!sendMessage()) return false;
@@ -118,6 +109,15 @@ bool Client::handleInput()
 
         case 27:
             return false;
+            break;
+
+        case 127:
+            if (message.size() > 1)
+            {
+                clearMessageLine();
+                message.pop_back();
+                std::cout << message;
+            }
             break;
 
         default:
