@@ -16,6 +16,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <string.h>
+#include <termios.h>
+#include <fcntl.h>
 
 #define MAX_CLIENTS     16
 #define BUFFER_SIZE     4096
@@ -43,6 +45,7 @@ class Server
         void start();
 
     private:
+        void freeResources();
         void raiseError(int type);
         void parsePacket(const char *buffer, int data_size);
         bool filterPacket();
@@ -54,6 +57,7 @@ class Server
         void readClient(int cl);
         void printPacketInfo();
         void printIP();
+        void setCanonialMode(bool on_off);
 
         uint16_t calculateChecksum(const char *buffer, uint16_t checksum, int data_size);
 
@@ -87,6 +91,10 @@ class Server
         int                 socket_raw, socket_master, new_socket;
         int                 addres_in_len;
         char               *buffer;
+
+        termios             t_old, t_new;
+        int                 oldf;
+        bool                canonial;
 };
 
 #endif // SERVER_H

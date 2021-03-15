@@ -3,12 +3,17 @@
 Client::Client(int _port)
 {
     port = _port;
+    canonial = false;
 
     buffer = new char[BUFFER_SIZE];
 
     memset(buffer, 0, sizeof(char) * BUFFER_SIZE);
 
     if ((my_socket = socket(AF_INET , SOCK_STREAM , IPPROTO_TCP)) == 0) raiseError(ERR_CREATION);
+
+    int opt = 1;
+
+    if (setsockopt(my_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt)) < 0) raiseError(ERR_OPTIONS);
 
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
@@ -17,6 +22,11 @@ Client::Client(int _port)
 }
 
 Client::~Client()
+{
+    freeResources();
+}
+
+void Client::freeResources()
 {
     delete[] buffer;
     setCanonialMode(false);
@@ -28,7 +38,7 @@ Client::~Client()
 void Client::setCanonialMode(bool on_off)
 {
 
-    if (on_off)
+    if (on_off && !canonial)
     {
         tcgetattr(fileno(stdin), &t_old);
         memcpy(&t_new, &t_old, sizeof(termios));
@@ -40,7 +50,7 @@ void Client::setCanonialMode(bool on_off)
         oldf = fcntl(fileno(stdin), F_GETFL, 0);
         fcntl(fileno(stdin), F_SETFL, oldf | O_NONBLOCK);
     }
-    else
+    else if (!on_off && canonial)
     {
         tcsetattr(fileno(stdin), TCSANOW, &t_old);
         fcntl(fileno(stdin), F_SETFL, oldf);
@@ -53,16 +63,13 @@ void Client::raiseError(int type)
     switch(type)
     {
         case ERR_CREATION: perror("Error when creating socket"); break;
+        case ERR_OPTIONS: perror("Error when changing socket options"); break;
         case ERR_ADDRESS: perror("Error when creating address"); break;
         case ERR_CONNECT: perror("Error when connecting socket"); break;
-        case ERR_BIND: perror("Error when binding socket"); break;
-        case ERR_LISTEN: perror("Error when listening socket"); break;
-        case ERR_SOCKET: perror("Error when polling socket"); break;
-        case ERR_INTERFACE: perror("Error when setting interface"); break;
-        case ERR_CLIENT: perror("Error when adding client"); break;
-        case ERR_READ: perror("Error when reading message"); break;
+        case ERR_SOCKET: perror("Error when polling sockets"); break;
     }
 
+    freeResources();
     exit(EXIT_FAILURE);
 }
 
@@ -160,9 +167,9 @@ void Client::start()
         time_out.tv_sec = 0;
         time_out.tv_usec = 100;
 
-        activity = select(my_socket, &fds_read,  NULL, NULL, &time_out);
+        activity = select(my_socket + 1, &fds_read,  NULL, NULL, &time_out);
 
-        if (activity < 0) raiseError(ERR_SOCKET);
+        if (activity < 0 && errno != EINTR) raiseError(ERR_SOCKET);
 
         if (FD_ISSET(my_socket, &fds_read))
         {

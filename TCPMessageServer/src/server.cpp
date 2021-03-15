@@ -3,6 +3,7 @@
 Server::Server(int _port)
 {
     port_number = _port;
+    canonial = false;
 
     buffer = new char[BUFFER_SIZE];
 
@@ -41,7 +42,14 @@ Server::Server(int _port)
 
 Server::~Server()
 {
+    freeResources();
+}
+
+void Server::freeResources()
+{
     delete[] buffer;
+
+    setCanonialMode(false);
 
     close(socket_raw);
     close(socket_master);
@@ -62,7 +70,31 @@ void Server::raiseError(int type)
         case ERR_READ: perror("Error when reading message"); break;
     }
 
+    freeResources();
     exit(EXIT_FAILURE);
+}
+
+void Server::setCanonialMode(bool on_off)
+{
+
+    if (on_off && !canonial)
+    {
+        tcgetattr(fileno(stdin), &t_old);
+        memcpy(&t_new, &t_old, sizeof(termios));
+        t_new.c_lflag &= ~(ECHO | ICANON);
+        t_new.c_cc[VTIME] = 0;
+        t_new.c_cc[VMIN] = 1;
+        tcsetattr(fileno(stdin), TCSANOW, &t_new);
+
+        oldf = fcntl(fileno(stdin), F_GETFL, 0);
+        fcntl(fileno(stdin), F_SETFL, oldf | O_NONBLOCK);
+    }
+    else if (!on_off && canonial)
+    {
+        tcsetattr(fileno(stdin), TCSANOW, &t_old);
+        fcntl(fileno(stdin), F_SETFL, oldf);
+    }
+
 }
 
 uint16_t Server::calculateChecksum(const char *buffer, uint16_t checksum, int data_size)
@@ -193,7 +225,7 @@ void Server::addNewClient()
 
     //if (source_addr.sin_addr.s_addr != master_addr.sin_addr.s_addr) return;
 
-    std::cout << "New connection: socket fd = " << new_socket << " ip = " << packet.ip_address;
+    std::cout << std::endl << "New connection: socket fd = " << new_socket << " ip = " << packet.ip_address;
     std::cout << " mac = " << packet.mac_address << std::endl;
 
     const char * message = "Welcome to Server";
@@ -261,9 +293,11 @@ void Server::start()
 
     if (listen(socket_master, 3) < 0) raiseError(ERR_LISTEN);
 
+    setCanonialMode(true);
+
     std::cout << "Server start: Listening on port " << port_number << std::endl;
 
-    while(packets < 100)
+    while(1)
     {
         FD_ZERO(&fds_read);
         FD_SET(socket_raw, &fds_read);
@@ -284,7 +318,7 @@ void Server::start()
 
         activity = select(max_sd + 1, &fds_read,  NULL, NULL, &time_out);
 
-        if (activity < 0) raiseError(ERR_SOCKET);
+        if (activity < 0 && errno != EINTR) raiseError(ERR_SOCKET);
 
         if (FD_ISSET(socket_raw, &fds_read))
         {
@@ -301,5 +335,7 @@ void Server::start()
         {
             if (FD_ISSET(clients[i].num , &fds_read)) readClient(i);
         }
+
+        if (fgetc(stdin) == 27) break;
     }
 }

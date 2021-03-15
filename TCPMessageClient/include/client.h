@@ -16,14 +16,10 @@
 #define BUFFER_SIZE    1024
 
 #define ERR_CREATION    0
-#define ERR_ADDRESS     1
-#define ERR_CONNECT     2
-#define ERR_BIND        3
-#define ERR_LISTEN      4
-#define ERR_SOCKET      5
-#define ERR_INTERFACE   7
-#define ERR_CLIENT      8
-#define ERR_READ        9
+#define ERR_OPTIONS     1
+#define ERR_ADDRESS     2
+#define ERR_CONNECT     3
+#define ERR_SOCKET      4
 
 
 class Client
@@ -35,6 +31,7 @@ class Client
         void start();
 
     private:
+        void freeResources();
         void raiseError(int type);
         void setCanonialMode(bool on_off);
         void clearMessageLine();
@@ -52,7 +49,8 @@ class Client
         std::string message;
 
         termios t_old, t_new;
-        int oldf;
+        int     oldf;
+        bool    canonial;
 };
 
 #endif // CLIENT_H
