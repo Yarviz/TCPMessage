@@ -3,7 +3,7 @@
 Server::Server(int _port)
 {
     port_number = _port;
-    canonial = false;
+    canonical_mode = false;
 
     buffer = new char[BUFFER_SIZE];
 
@@ -49,7 +49,7 @@ void Server::freeResources()
 {
     delete[] buffer;
 
-    setCanonialMode(false);
+    setCanonicalMode(false);
 
     close(socket_raw);
     close(socket_master);
@@ -67,17 +67,17 @@ void Server::raiseError(int type)
         case ERR_SOCKET: perror("Error when polling sockets"); break;
         case ERR_INTERFACE: perror("Error when setting interface"); break;
         case ERR_CLIENT: perror("Error when adding client"); break;
-        case ERR_READ: perror("Error when reading message"); break;
+        case ERR_READ: perror("Error when reading message"); return; break;
     }
 
     freeResources();
     exit(EXIT_FAILURE);
 }
 
-void Server::setCanonialMode(bool on_off)
+void Server::setCanonicalMode(bool on_off)
 {
 
-    if (on_off && !canonial)
+    if (on_off && !canonical_mode)
     {
         tcgetattr(fileno(stdin), &t_old);
         memcpy(&t_new, &t_old, sizeof(termios));
@@ -88,11 +88,13 @@ void Server::setCanonialMode(bool on_off)
 
         oldf = fcntl(fileno(stdin), F_GETFL, 0);
         fcntl(fileno(stdin), F_SETFL, oldf | O_NONBLOCK);
+        canonical_mode = true;
     }
-    else if (!on_off && canonial)
+    else if (!on_off && canonical_mode)
     {
         tcsetattr(fileno(stdin), TCSANOW, &t_old);
         fcntl(fileno(stdin), F_SETFL, oldf);
+        canonical_mode = false;
     }
 
 }
@@ -247,7 +249,12 @@ void Server::readClient(int cl)
 {
     int read_size = read(clients[cl].num, buffer, BUFFER_SIZE - 1);
 
-    if (read_size < 0) raiseError(ERR_READ);
+    if (read_size < 0)
+    {
+        raiseError(ERR_READ);
+        return;
+    }
+
     if (read_size == 0)
     {
         std::cout << clients[cl].mac_address << " Disconnected." << std::endl;
@@ -285,7 +292,6 @@ void Server::start()
     master_addr_size = sizeof(master_addr);
     int data_size, activity;
     int sd, max_sd;
-    int packets = 0;
     timeval time_out;
 
     if (bind(socket_master, (struct sockaddr *)&master_addr, master_addr_size) < 0) raiseError(ERR_BIND);
@@ -293,7 +299,7 @@ void Server::start()
 
     if (listen(socket_master, 3) < 0) raiseError(ERR_LISTEN);
 
-    setCanonialMode(true);
+    setCanonicalMode(true);
 
     std::cout << "Server start: Listening on port " << port_number << std::endl;
 
@@ -326,7 +332,6 @@ void Server::start()
 
             if (data_size < 0) raiseError(ERR_RECEIVE);
             parsePacket(buffer, data_size);
-            ++packets;
         }
 
         if (FD_ISSET(socket_master, &fds_read)) addNewClient();

@@ -57,7 +57,7 @@ class Server
         void readClient(int cl);
         void printPacketInfo();
         void printIP();
-        void setCanonialMode(bool on_off);
+        void setCanonicalMode(bool on_off);
 
         uint16_t calculateChecksum(const char *buffer, uint16_t checksum, int data_size);
 
@@ -71,7 +71,7 @@ class Server
         {
             uint16_t cheksum;
             uint16_t cheksum_calc;
-            char     ip_address[16];
+            char     ip_address[18];
             char     mac_address[18];
         };
 
@@ -94,7 +94,7 @@ class Server
 
         termios             t_old, t_new;
         int                 oldf;
-        bool                canonial;
+        bool                canonical_mode;
 };
 
 #endif // SERVER_H

@@ -33,7 +33,7 @@ class Client
     private:
         void freeResources();
         void raiseError(int type);
-        void setCanonialMode(bool on_off);
+        void setCanonicalMode(bool on_off);
         void clearMessageLine();
         bool handleInput();
         bool sendMessage();
@@ -50,7 +50,7 @@ class Client
 
         termios t_old, t_new;
         int     oldf;
-        bool    canonial;
+        bool    canonical_mode;
 };
 
 #endif // CLIENT_H

@@ -3,7 +3,7 @@
 Client::Client(int _port)
 {
     port = _port;
-    canonial = false;
+    canonical_mode = false;
 
     buffer = new char[BUFFER_SIZE];
 
@@ -29,16 +29,16 @@ Client::~Client()
 void Client::freeResources()
 {
     delete[] buffer;
-    setCanonialMode(false);
+    setCanonicalMode(false);
 
     shutdown(my_socket, SHUT_RDWR);
     close(my_socket);
 }
 
-void Client::setCanonialMode(bool on_off)
+void Client::setCanonicalMode(bool on_off)
 {
 
-    if (on_off && !canonial)
+    if (on_off && !canonical_mode)
     {
         tcgetattr(fileno(stdin), &t_old);
         memcpy(&t_new, &t_old, sizeof(termios));
@@ -49,11 +49,13 @@ void Client::setCanonialMode(bool on_off)
 
         oldf = fcntl(fileno(stdin), F_GETFL, 0);
         fcntl(fileno(stdin), F_SETFL, oldf | O_NONBLOCK);
+        canonical_mode = true;
     }
-    else if (!on_off && canonial)
+    else if (!on_off && canonical_mode)
     {
         tcsetattr(fileno(stdin), TCSANOW, &t_old);
         fcntl(fileno(stdin), F_SETFL, oldf);
+        canonical_mode = false;
     }
 
 }
@@ -86,7 +88,7 @@ bool Client::sendMessage()
     send(my_socket, &message.c_str()[1], message.size() - 1, 0);
     message = ">";
 
-    if (!readSocket()) return false;
+    //if (!readSocket()) return false;
     return true;
 }
 
@@ -157,7 +159,7 @@ void Client::start()
     message = " ";
     sendMessage();
 
-    setCanonialMode(true);
+    setCanonicalMode(true);
 
     while(1)
     {
