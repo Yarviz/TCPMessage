@@ -16,6 +16,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <string.h>
+#include <termios.h>
+#include <fcntl.h>
 
 #define MAX_CLIENTS     16
 #define BUFFER_SIZE     4096
@@ -28,6 +30,7 @@
 #define ERR_SOCKET      5
 #define ERR_INTERFACE   7
 #define ERR_CLIENT      8
+#define ERR_READ        9
 
 #define PROT_TCP        6
 #define PROT_UDP        17
@@ -42,32 +45,34 @@ class Server
         void start();
 
     private:
+        void freeResources();
         void raiseError(int type);
-        void parsePacket(const uint8_t *buffer, int data_size);
+        void parsePacket(const char *buffer, int data_size);
         bool filterPacket();
         void parseEthernet();
         void parseIPheader();
-        bool parseTCP(const uint8_t *buffer, int data_size);
-        void parseUDP(const uint8_t *buffer, int data_size);
+        bool parseTCP(const char *buffer, int data_size);
+        void parseUDP(const char *buffer, int data_size);
         void addNewClient();
         void readClient(int cl);
         void printPacketInfo();
         void printIP();
+        void setCanonicalMode(bool on_off);
 
-        uint16_t calculateChecksum(const uint8_t *buffer, uint16_t checksum, int data_size);
+        uint16_t calculateChecksum(const char *buffer, uint16_t checksum, int data_size);
 
         struct clnt_sock
         {
             int num;
-            char mac_address[16];
+            char mac_address[18];
         };
 
         struct packet_info
         {
             uint16_t cheksum;
             uint16_t cheksum_calc;
-            char     ip_address[16];
-            char     mac_address[16];
+            char     ip_address[18];
+            char     mac_address[18];
         };
 
         struct sockaddr_ll  raw_addr_ll;
@@ -85,7 +90,11 @@ class Server
         unsigned int        master_addr_size;
         int                 socket_raw, socket_master, new_socket;
         int                 addres_in_len;
-        uint8_t             buffer[BUFFER_SIZE];
+        char               *buffer;
+
+        termios             t_old, t_new;
+        int                 oldf;
+        bool                canonical_mode;
 };
 
 #endif // SERVER_H
