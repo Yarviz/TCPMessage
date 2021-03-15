@@ -77,7 +77,7 @@ void Client::raiseError(int type)
 
 void Client::clearMessageLine()
 {
-    std::string erase_line = "\r" + std::string(" ", message.size()) + "\r";
+    std::string erase_line = '\r' + std::string(message.size(), ' ') + '\r';
     std::cout << erase_line;
     fflush(stdout);
 }
@@ -102,6 +102,15 @@ bool Client::handleInput()
             return true;
             break;
 
+        case 8:
+            if (message.size() > 1)
+            {
+                clearMessageLine();
+                message.pop_back();
+                std::cout << message;
+            }
+            break;
+
         case 10:
             if (message.size() == 1) return true;
             if (!sendMessage()) return false;
@@ -109,15 +118,6 @@ bool Client::handleInput()
 
         case 27:
             return false;
-            break;
-
-        case 127:
-            if (message.size() > 1)
-            {
-                clearMessageLine();
-                message.pop_back();
-                std::cout << message;
-            }
             break;
 
         default:
@@ -143,7 +143,7 @@ bool Client::readSocket()
     buffer[read_size] = '\0';
     clearMessageLine();
     std::cout << buffer << std::endl;
-    std::cout << message;
+    std::cout << message << std::flush;
 
     return true;
 }

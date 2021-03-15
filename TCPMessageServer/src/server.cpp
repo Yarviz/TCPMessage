@@ -281,7 +281,6 @@ void Server::readClient(int cl)
         if(clients[i].num > 0)
         {
             send(clients[i].num, answer, 20 + read_size, 0);
-            break;
         }
     }
 }
