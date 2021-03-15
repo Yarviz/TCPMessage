@@ -4,7 +4,9 @@ Server::Server(int _port)
 {
     port_number = _port;
 
-    memset(buffer, 0, sizeof(buffer));
+    buffer = new char[BUFFER_SIZE];
+
+    memset(buffer, 0, sizeof(char) * BUFFER_SIZE);
     memset(clients, 0, sizeof(clients));
     memset(&packet, 0, sizeof(packet));
 
@@ -28,9 +30,9 @@ Server::Server(int _port)
     bzero(&raw_addr_ll, sizeof(raw_addr_ll));
     bzero(&ifr, sizeof(ifr));
 
-    strncpy((char *)ifr.ifr_name, "wlp2s0", IFNAMSIZ);
+    //strncpy((char *)ifr.ifr_name, "wlp2s0", IFNAMSIZ);
 
-    if((ioctl(socket_raw, SIOCGIFINDEX, &ifr)) == -1) raiseError(ERR_INTERFACE);
+    //if((ioctl(socket_raw, SIOCGIFINDEX, &ifr)) == -1) raiseError(ERR_INTERFACE);
 
     raw_addr_ll.sll_family = AF_PACKET;
     raw_addr_ll.sll_ifindex = ifr.ifr_ifindex;
@@ -39,7 +41,10 @@ Server::Server(int _port)
 
 Server::~Server()
 {
-    //dtor
+    delete[] buffer;
+
+    close(socket_raw);
+    close(socket_master);
 }
 
 void Server::raiseError(int type)
@@ -54,12 +59,13 @@ void Server::raiseError(int type)
         case ERR_SOCKET: perror("Error when polling sockets"); break;
         case ERR_INTERFACE: perror("Error when setting interface"); break;
         case ERR_CLIENT: perror("Error when adding client"); break;
+        case ERR_READ: perror("Error when reading message"); break;
     }
 
     exit(EXIT_FAILURE);
 }
 
-uint16_t Server::calculateChecksum(const uint8_t *buffer, uint16_t checksum, int data_size)
+uint16_t Server::calculateChecksum(const char *buffer, uint16_t checksum, int data_size)
 {
     uint64_t sum = 0;
     uint16_t ret = 0;
@@ -103,11 +109,9 @@ bool Server::filterPacket()
 
 void Server::parseEthernet()
 {
-    //std::cout << "Destination MAC address: " << ether_ntoa((const struct ether_addr*)eth_header) << std::endl;
     sprintf(packet.mac_address, "%.2X-%.2X-%.2X-%.2X-%.2X-%.2X",
             eth_header->h_source[0], eth_header->h_source[1], eth_header->h_source[2],
             eth_header->h_source[3], eth_header->h_source[4], eth_header->h_source[5]);
-    //std::cout << "Destination MAC address: " << ether_ntoa(&eth_header->h_dest) << std::endl;
 }
 
 void Server::parseIPheader()
@@ -121,7 +125,7 @@ void Server::parseIPheader()
     //std::cout << "IP header size: " << (int)ip_header->ihl * 4 << std::endl;
 }
 
-bool Server::parseTCP(const uint8_t *buffer, int data_size)
+bool Server::parseTCP(const char *buffer, int data_size)
 {
     tcp_header = (struct tcphdr*)(buffer + sizeof(struct ethhdr) + ip_header->ihl * 4);
 
@@ -139,12 +143,12 @@ bool Server::parseTCP(const uint8_t *buffer, int data_size)
     return true;
 }
 
-void Server::parseUDP(const uint8_t *buffer, int data_size)
+void Server::parseUDP(const char *buffer, int data_size)
 {
     std::cout << "Packet protocol: UDP" << std::endl;
 }
 
-void Server::parsePacket(const uint8_t *buffer, int data_size)
+void Server::parsePacket(const char *buffer, int data_size)
 {
     eth_header = (struct ethhdr*)buffer;
     ip_header = (struct iphdr*)(buffer + sizeof(struct ethhdr));
@@ -181,7 +185,11 @@ void Server::printPacketInfo()
 
 void Server::addNewClient()
 {
-    if ((new_socket = accept(socket_master, (struct sockaddr *)&master_addr, (socklen_t*)&master_addr_size)) < 0) raiseError(ERR_CLIENT);
+    if ((new_socket = accept(socket_master, (struct sockaddr *)&master_addr, (socklen_t*)&master_addr_size)) < 0)
+    {
+        raiseError(ERR_CLIENT);
+        return;
+    }
 
     //if (source_addr.sin_addr.s_addr != master_addr.sin_addr.s_addr) return;
 
@@ -197,6 +205,7 @@ void Server::addNewClient()
         if(clients[i].num == 0)
         {
             clients[i].num = new_socket;
+            strcpy(clients[i].mac_address, packet.mac_address);
             break;
         }
     }
@@ -204,29 +213,35 @@ void Server::addNewClient()
 
 void Server::readClient(int cl)
 {
-    int read_size;
+    int read_size = read(clients[cl].num, buffer, BUFFER_SIZE - 1);
 
-    if ((read_size = read(clients[cl].num, buffer, BUFFER_SIZE - 1)) == 0)
+    if (read_size < 0) raiseError(ERR_READ);
+    if (read_size == 0)
     {
-        getpeername(clients[cl].num ,(struct sockaddr*)&master_addr, (socklen_t*)&master_addr_size);
-        std::cout << "Host disconnect: ip = " << inet_ntoa(master_addr.sin_addr) << " port = " << ntohs(master_addr.sin_port) << std::endl;
+        std::cout << clients[cl].mac_address << " Disconnected." << std::endl;
 
         close(clients[cl].num);
         clients[cl].num  = 0;
         return;
     }
 
-    buffer[read_size] = '\0';
-    std::cout << buffer << std::endl;
+    printPacketInfo();
 
-    int sock;
+    buffer[read_size] = '\0';
+    char answer[20 + read_size];
+
+    strcpy(answer, clients[cl].mac_address);
+    strncpy(&answer[17], ": ", 3);
+    strncpy(&answer[19], buffer, read_size + 1);
+
+    //std::string answer = std::string(clients[cl].mac_address, 16) + ": " + std::string(buffer, read_size);
+    std::cout << answer << std::endl;
 
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
         if(clients[i].num > 0)
         {
-            sock = getpeername(clients[i].num ,(struct sockaddr*)&master_addr, (socklen_t*)&master_addr_size);
-            send(sock, buffer, read_size, 0);
+            send(clients[i].num, answer, 20 + read_size, 0);
             break;
         }
     }
@@ -287,7 +302,4 @@ void Server::start()
             if (FD_ISSET(clients[i].num , &fds_read)) readClient(i);
         }
     }
-
-    close(socket_raw);
-    close(socket_master);
 }
